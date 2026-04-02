@@ -1,0 +1,16 @@
+{
+  "scene_name": "replace_me",
+  "table_name": "replace_me",
+  "batches": [
+    {
+      "batch_id": "batch-0001",
+      "status": "planned",
+      "local_path": "replace_me",
+      "hdfs_path": "replace_me",
+      "row_count": 0,
+      "file_count": 0,
+      "bytes": 0,
+      "retry_count": 0
+    }
+  ]
+}

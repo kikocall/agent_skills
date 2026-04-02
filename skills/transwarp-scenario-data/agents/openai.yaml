@@ -1,0 +1,4 @@
+interface:
+  display_name: "Transwarp Scenario Data"
+  short_description: "面向星环测试集群的大规模批量造数、HDFS 落地与外表/装载导入方案设计。"
+  default_prompt: "Use $transwarp-scenario-data to design a batch-scale data generation, HDFS loading, and external-table or ArgoDB import workflow for reproducing a Transwarp customer scenario on a test cluster."

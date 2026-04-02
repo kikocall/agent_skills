@@ -1,0 +1,13 @@
+project/
+  config/
+    quark.yaml
+  sql/
+    query.sql
+    query_01.sql
+    query_02.sql
+  scripts/
+    run_sql_file.py
+    run_batch_queries.py
+  output/
+    query.csv
+    logs/

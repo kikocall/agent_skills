@@ -1,0 +1,9 @@
+host: YOUR_HOST
+port: 10000
+database: YOUR_DATABASE
+auth_mechanism: NOSASL
+user:
+password:
+kerberos_service_name: hive
+principal:
+keytab:

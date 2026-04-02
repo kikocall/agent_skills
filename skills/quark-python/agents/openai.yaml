@@ -1,0 +1,4 @@
+interface:
+  display_name: "Quark Python"
+  short_description: "先检查环境与配置，再生成和执行连接 Quark 的 Python 脚本。"
+  default_prompt: "使用 Quark Python skill，先检查当前 Python 和依赖环境，扫描工作目录下可能存在的 Quark/集群配置文件并向我确认是否复用；如果任务是批量或复杂查询，请按配置、SQL、脚本分离的结构生成；在准备执行前，先向我展示脚本内容和本次执行概要，再等待确认。"

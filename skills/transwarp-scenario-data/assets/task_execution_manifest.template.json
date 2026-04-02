@@ -1,0 +1,37 @@
+﻿{
+  "scene_name": "replace_me",
+  "run_id": "replace_me",
+  "mode": "small",
+  "steps": [
+    {
+      "step": "render_sql",
+      "status": "planned",
+      "detail": ""
+    },
+    {
+      "step": "generate_batches",
+      "status": "planned",
+      "detail": ""
+    },
+    {
+      "step": "upload_hdfs",
+      "status": "planned",
+      "detail": ""
+    },
+    {
+      "step": "load_internal",
+      "status": "planned",
+      "detail": ""
+    },
+    {
+      "step": "run_tasks",
+      "status": "planned",
+      "detail": ""
+    },
+    {
+      "step": "verify",
+      "status": "planned",
+      "detail": ""
+    }
+  ]
+}
