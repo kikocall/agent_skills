@@ -23,7 +23,7 @@
 - 尽量让配置目录名和 Kerberos 目录名有可读的关联，便于自动配对
 - 仍然保留 `TDH-Client/conf` 与 `TDH-Client/kerberos` 软链作为“当前激活集群”的显式入口
 
-如果f��个集群在扫描结果中出现 `pairing_status=ambiguous`，说明系统无法安全判断它应该配哪套 Kerberos 目录，此时需要：
+如果某个集群在扫描结果中出现 `pairing_status=ambiguous`，说明系统无法安全判断它应该配哪套 Kerberos 目录，此时需要：
 
 1. 调整目录命名，增强对应关系
 2. 或者先手工切换 `conf` / `kerberos` 软链，再重新扫描

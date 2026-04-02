@@ -11,7 +11,7 @@ description: 操作和管理星环 TDH (Transwarp Data Hub) 集群。支持动�
 
 当任务涉及以下内容时使用这个 skill：
 
-- 扦描 TDH-Client 下的集群配置和 Kerberos 目录
+- 扫描 TDH-Client 下的集群配置和 Kerberos 目录
 - 切换 `conf` / `kerberos` 软链到目标集群
 - 判断 HDFS、YARN、HBase、Quark 的认证方式
 - 为 Kerberos 集群选择正确的 keytab 和 principal
@@ -28,7 +28,7 @@ description: 操作和管理星环 TDH (Transwarp Data Hub) 集群。支持动�
 
 ### 必需输入
 
-执行脚本䉍，至少要确认以下输入：
+执行脚本前，至少要确认以下输入：
 
 - `TDH_CLIENT_HOME`
   - 指向 TDH-Client 根目录，例如 `export TDH_CLIENT_HOME="$HOME/TDH-Client"`
@@ -72,7 +72,7 @@ source "$TDH_CLIENT_HOME/init.sh" n n
 
 ### 新 shell 初始化方式
 
-每朡执行命令时，脚本会为当前任务生成临时 bootstrap 文件，并用下面两种方式之一启动新的交互 shell：
+每次执行命令时，脚本会为当前任务生成临时 bootstrap 文件，并用下面两种方式之一启动新的交互 shell：
 
 ```bash
 bash --rcfile "<bootstrap_file>" -i -c "<command>"
@@ -94,7 +94,7 @@ bash -i -c "source '<bootstrap_file>'; <command>"
 
 ### Kerberos 票据缓存
 
-每朡任务使用独立的 `KRB5CCNAME`，格式类似：
+每次任务使用独立的 `KRB5CCNAME`，格式类似：
 
 ```text
 FILE:$HOME/tdh-cluster/runtime/<run_id>/krb5cc
@@ -113,7 +113,7 @@ bash scripts/discover-clusters.sh
 作用：
 
 - 扫描 `TDH_CLIENT_HOME` 根目录下的配置目录候选
-- 扦描 `TDH_CLIENT_HOME` 根目录下的 Kerberos 目录候选
+- 扫描 `TDH_CLIENT_HOME` 根目录下的 Kerberos 目录候选
 - 识别当前激活集群
 - 生成本地索引文件
 
@@ -198,7 +198,7 @@ bash scripts/check-auth.sh <cluster>
 
 - `CLUSTER_ID`
 - `CONF_DIR`
-- `KERBEROS_DIR0
+- `KERBEROS_DIR`
 - `PAIRING_STATUS`
 - `REALM`
 - `HADOOP_AUTH`
@@ -249,9 +249,240 @@ Quark 的判定逻辑：
   - 先按无认证处理
 - 无认证失败
   - 标记为 `LDAP_POSSIBLE`
-  - 如需继续执行，再提供 `TDH_LDAP_USERNAME` 和 `TDH_LDAP_PASSWORD` 继续尝试
+  - 如需继续执行，再提供 `TDH_LDAP_USERNAME` 和 `TDH_LDAP_PASSWORD`
 
-w��一记证输出只有以下囚种：
+统一认证输出只有以下四种：
 
-- �`KERBEROS`
-- `
+- `KERBEROS`
+- `SIMPLE_OR_NONE`
+- `LDAP_POSSIBLE`
+- `UNKNOWN`
+
+### 步骤 5：选择 keytab
+
+```bash
+bash scripts/resolve-keytab.sh <cluster> [service] [explicit_keytab]
+```
+
+输入：
+
+- `<cluster>`：目标 `cluster_id`
+- `[service]`：可选，默认 `hive`
+- `[explicit_keytab]`：可选，显式指定 keytab 路径
+
+候选顺序：
+
+1. 用户显式指定的 keytab
+2. 当前集群已配对的 Kerberos 目录中的 keytab
+3. `TDH_CLIENT_HOME` 根目录直属的 `*.keytab`
+4. 当前工作目录下的 `*.keytab`
+
+选择规则：
+
+- 对每个候选执行 `klist -k`
+- 只保留 Realm 与当前集群一致的 principal
+- 优先级如下：
+  - 通用或 SQL：`hive > hdfs > yarn`
+  - HDFS：`hdfs > hive > yarn`
+  - YARN：`yarn > hive > hdfs`
+- 同一优先级命中多个 principal 时直接失败
+- 非 Kerberos 集群会输出“当前集群不需要 keytab”
+
+### 步骤 6：定位 Quark-Server
+
+Hive / Quark 连接前，必须先从当前集群配置中提取 Quark 候选，不能假设固定地址。
+
+优先级：
+
+1. `hive-site.xml` 中的 `transwarp.docker.inceptor`
+2. `hive.server2.thrift.bind.host` + `hive.server2.thrift.port`
+3. 只有 host 没有 port 时，补端口 `10000`
+
+典型排查命令：
+
+```bash
+grep -R "transwarp.docker.inceptor" "$TDH_CLIENT_HOME/conf"/*/hive-site.xml 2>/dev/null
+grep -R "hive.server2.thrift.bind.host\|hive.server2.thrift.port" "$TDH_CLIENT_HOME/conf"/*/hive-site.xml 2>/dev/null
+```
+
+脚本会按候选顺序做两层验证：
+
+1. 端口探测
+
+```bash
+timeout 2 bash -c "cat < /dev/null > /dev/tcp/<host>/<port>"
+```
+
+2. `beeline` 探活
+
+```bash
+beeline -u "<jdbc_url>" -e "SELECT 1;"
+```
+
+第一个验证成功的候选会成为本次任务的：
+
+- `SELECTED_QUARK_SERVER`
+- `SELECTED_QUARK_PORT`
+- `SELECTED_JDBC_URL`
+
+### 步骤 7：在新 shell 中执行命令
+
+```bash
+bash scripts/run-with-env.sh <cluster> -- "<command>"
+```
+
+输入：
+
+- `<cluster>`：目标 `cluster_id`
+- `<command>`：要执行的完整 Linux Bash 命令
+
+作用：
+
+- 生成当前任务专属的 bootstrap 文件
+- 设置 `TDH_CLIENT_HOME`
+- 设置 `KRB5_CONFIG`
+- 设置独立的 `KRB5CCNAME`
+- `source "$TDH_CLIENT_HOME/init.sh" n n`
+- Kerberos 集群下检查或执行 `kinit -kt`
+- 在新的交互 shell 中执行 `<command>`
+
+示例：
+
+```bash
+bash scripts/run-with-env.sh alpha-prod-config -- "hdfs dfs -ls /"
+```
+
+### 步骤 8：执行服务验证并落盘
+
+```bash
+bash scripts/connect.sh <cluster> <service|all>
+```
+
+输入：
+
+- `<cluster>`：目标 `cluster_id`
+- `<service|all>`：`hdfs`、`yarn`、`hive`、`kafka`、`zookeeper` 或 `all`
+
+作用：
+
+- 自动完成认证判定
+- 自动选择 keytab
+- 自动发现并验证 Quark
+- 按服务执行验证命令
+- 把所有证据写入本地结果目录
+
+结果目录：
+
+```text
+~/tdh-test-results/<timestamp>-<cluster_id>/
+```
+
+固定输出：
+
+- `cases.md`
+- `cluster-context.txt`
+- `auth-detection.txt`
+- `commands.log`
+- `results/`
+- `summary.md`
+
+其中 `results/` 至少包含：
+
+- `quark-discovery.stdout.log`
+- `quark-discovery.stderr.log`
+- `<service>.stdout.log`
+- `<service>.stderr.log`
+
+## JDBC URL 规则
+
+Hive / Quark 连接使用 `jdbc:hive2://<host>:<port>/<database>`。
+
+Kerberos 场景：
+
+- 优先使用配置中的 `hive.server2.authentication.kerberos.principal`
+- 配置缺失时，回退为 `hive/<host>@<REALM>`
+
+无认证场景：
+
+- 先使用不带 principal 的 JDBC URL
+
+LDAP 场景：
+
+- 使用无认证尝试失败后，再结合 `TDH_LDAP_USERNAME` 与 `TDH_LDAP_PASSWORD` 继续尝试
+
+## SQL 语法报错处理
+
+当 Hive / Quark SQL 执行失败时，排查顺序固定为：
+
+1. ArgoDB 官方文档
+2. Inceptor 官方文档
+3. Hive 官方文档或 Hive 社区资料
+4. 定向网络检索
+
+`summary.md` 中必须记录：
+
+- 原始 SQL
+- 原始报错
+- 查阅来源
+- 最终采用的语法依据
+- 修正后的 SQL 或下一步建议
+
+不要只写“疑似 Hive 语法问题”这种模糊结论。
+
+## 统一资源附录
+
+当编写 SQL、使用客户端工具或查询 API 语法时，优先参考以下资源：
+
+| 用途 | 文档链接 |
+|------|---------|
+| 文档中心（总入口） | https://www.transwarp.cn/doc |
+| TDH 平台总览 | https://transwarp.cn/doc/tdh/9.4 |
+| Inceptor SQL 语法（Hive 兼容 SQL） | https://transwarp.cn/doc/inceptor/9.4 |
+| Hyperbase 操作（HBase 兼容） | https://transwarp.cn/doc/hyperbase/9.3 |
+| Scope 全文检索 | https://transwarp.cn/doc/scope/3.0 |
+| StellarDB 图查询 | https://transwarp.cn/doc/stellardb/5.1 |
+| ArgoDB 分析型数据库 | https://transwarp.cn/doc/argodb/6.0 |
+| Slipstream 流计算 | 在文档中心内查找 Slipstream |
+
+技术支持入口：
+
+| 资源 | 链接 | 说明 |
+|------|------|------|
+| Knowledge Base | https://kb.transwarp.cn | 技术文章、故障排查、最佳实践 |
+| 开发者社区 | https://community.transwarp.cn | 问答、社区版资源、驱动下载 |
+
+## 脚本职责
+
+- `scripts/discover-clusters.sh`
+  - 扫描集群并刷新索引
+- `scripts/switch-cluster.sh`
+  - 切换 `conf` / `kerberos` 软链并输出当前集群摘要
+- `scripts/check-env.sh`
+  - 检查运行环境和索引状态
+- `scripts/check-auth.sh`
+  - 输出总体认证判定和服务认证判定
+- `scripts/resolve-keytab.sh`
+  - 解析当前集群应使用的 keytab 与 principal
+- `scripts/run-with-env.sh`
+  - 生成 bootstrap、设置独立票据缓存，并在新 shell 中执行命令
+- `scripts/connect.sh`
+  - 执行服务验证并统一落盘
+- `scripts/setup-env.sh`
+  - 输出推荐的执行入口和命令格式
+
+## 常用输入示例
+
+```bash
+export TDH_CLIENT_HOME="$HOME/TDH-Client"
+bash scripts/discover-clusters.sh
+bash scripts/check-auth.sh alpha-prod-config
+bash scripts/resolve-keytab.sh alpha-prod-config hive
+bash scripts/run-with-env.sh alpha-prod-config -- "hdfs dfs -ls /"
+bash scripts/connect.sh alpha-prod-config all
+```
+
+## 内部资源
+
+- 配置模板：[references/cluster-config-template.md](references/cluster-config-template.md)
+- 配置说明：[references/cluster-config.md](references/cluster-config.md)
+- 测试脚本：[tests/test_tdh_cluster.sh](tests/test_tdh_cluster.sh)
