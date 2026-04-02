@@ -1,62 +1,48 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-TDH_CLIENT="${TDH_CLIENT:-$HOME/TDH-Client}"
+set -euo pipefail
 
-if [ ! -d "$TDH_CLIENT" ]; then
-    echo "错误: 找不到 TDH-Client: $TDH_CLIENT"
-    echo "请设置 TDH_CLIENT 环境变量"
-    return 1 2>/dev/null || exit 1
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${SCRIPT_DIR}/lib/tdh-common.sh"
 
-available_clusters=()
-for d in "$TDH_CLIENT"/*-conf; do
-    [ -d "$d" ] && available_clusters+=("$(basename "${d%-conf}")")
-done
+main() {
+    local cluster_id="${1:-}"
+    [ -n "${cluster_id}" ] || {
+        tdh_error "用法: switch-cluster.sh <cluster>"
+        return 1
+    }
 
-if [ ${#available_clusters[@]} -eq 0 ]; then
-    echo "错误: 未找到任何集群配置目录 (*-conf)"
-    return 1 2>/dev/null || exit 1
-fi
+    tdh_resolve_cluster_context "${cluster_id}" >/dev/null
+    [ "${TDH_CLUSTER_PAIRING_STATUS}" = "paired" ] || {
+        tdh_error "集群 ${TDH_CLUSTER_ID} 的 kerberos 目录配对状态为 ${TDH_CLUSTER_PAIRING_STATUS}，无法安全切换"
+        return 1
+    }
 
-show_usage() {
-    echo "用法: source switch-cluster.sh [集群名]"
-    echo ""
-    echo "可用集群:"
-    for c in "${available_clusters[@]}"; do
-        echo "  - $c"
-    done
-    echo ""
-    echo "当前配置:"
-    ls -l "$TDH_CLIENT/conf" "$TDH_CLIENT/kerberos" 2>/dev/null
+    local conf_link="${TDH_CLIENT_HOME}/conf"
+    local kerb_link="${TDH_CLIENT_HOME}/kerberos"
+    if [ -e "${conf_link}" ] && [ ! -L "${conf_link}" ]; then
+        tdh_error "${conf_link} 不是软链，拒绝覆盖"
+        return 1
+    fi
+    if [ -e "${kerb_link}" ] && [ ! -L "${kerb_link}" ]; then
+        tdh_error "${kerb_link} 不是软链，拒绝覆盖"
+        return 1
+    fi
+
+    rm -f "${conf_link}" "${kerb_link}"
+    ln -s "$(basename "${TDH_CLUSTER_CONF_DIR}")" "${conf_link}"
+    ln -s "$(basename "${TDH_CLUSTER_KERBEROS_DIR}")" "${kerb_link}"
+
+    tdh_discover_and_write_index >/dev/null
+    tdh_resolve_cluster_context "${cluster_id}" >/dev/null
+
+    cat <<EOF
+CURRENT_CLUSTER=${TDH_CLUSTER_ID}
+CONF_DIR=${TDH_CLUSTER_CONF_DIR}
+KERBEROS_DIR=${TDH_CLUSTER_KERBEROS_DIR}
+PAIRING_STATUS=${TDH_CLUSTER_PAIRING_STATUS}
+AUTH_MODE=$(tdh_effective_auth_mode)
+EOF
 }
 
-if [ $# -eq 0 ]; then
-    show_usage
-    return 0 2>/dev/null || exit 0
-fi
-
-cluster_name="$1"
-
-if [[ ! " ${available_clusters[@]} " =~ " ${cluster_name} " ]]; then
-    echo "错误: 集群 '$cluster_name' 不存在"
-    echo "可用集群: ${available_clusters[*]}"
-    return 1 2>/dev/null || exit 1
-fi
-
-rm -f "$TDH_CLIENT/conf" "$TDH_CLIENT/kerberos"
-ln -s "${cluster_name}-conf" "$TDH_CLIENT/conf"
-ln -s "${cluster_name}-kerberos" "$TDH_CLIENT/kerberos"
-
-echo "已切换到集群: $cluster_name"
-echo ""
-echo "配置链接:"
-ls -l "$TDH_CLIENT/conf" "$TDH_CLIENT/kerberos"
-
-if [ -f "$TDH_CLIENT/kerberos/krb5.conf" ]; then
-    realm=$(grep -m1 "^default_realm" "$TDH_CLIENT/kerberos/krb5.conf" | awk '{print $3}')
-    echo ""
-    echo "Kerberos Realm: $realm"
-fi
-
-echo ""
-echo "下一步: source $TDH_CLIENT/init.sh n n"
+main "$@"
